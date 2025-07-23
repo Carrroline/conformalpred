@@ -5,7 +5,7 @@ This project implements a walk-forward backtesting framework for financial tradi
 ## Project Files
 
 - `runConformalBacktest.m`: The main MATLAB function for the Experiment Manager. It contains the full walk-forward logic with periodic retraining and selectable signal generation rules.
-- `test.m`: A standalone script for diagnostic purposes, such as validating the empirical coverage rate of the conformal prediction intervals. **(Recommended to rename to `validate_coverage.m`)**.
+- `validate_coverage.m`: A standalone script for diagnostic purposes, such as validating the empirical coverage rate of the conformal prediction intervals.
 - `runLSTMBACKtest.m`: A baseline backtest using only the raw LSTM model, useful for performance comparison.
 - `BacktestStrategiesUsingDeepLearningExample.mlx`: The original MathWorks example notebook that this project is based on.
 - `energyPrices.mat`: The raw energy futures price data required to run the backtests.
