@@ -10,6 +10,8 @@ function results = runConformalBacktest(params)
     %            .initialLearnRate: Initial learning rate for the optimizer.
     %            .randomSeed: Seed for the random number generator for reproducibility.
     %            .retrainFreq: Frequency of model retraining (unit: days)
+    %            .signalLogic: 0: Original Binary Filtering 1:Adjust Signal
+    %            Scaling by Confidence 2: Use Direct Boundary Signaling
     %
     % Outputs:
     %   results - A struct containing the key performance indicators (KPIs)
@@ -23,7 +25,8 @@ function results = runConformalBacktest(params)
     maxEpochs = params.maxEpochs;
     initialLearnRate = params.initialLearnRate;
 
-    retrainFreq = params.retrainFreq; 
+    retrainFreq = params.retrainFreq;
+    signalLogic = params.signalLogic;
     
     % Random seed to replicate 
     rng(params.randomSeed, "twister");
@@ -109,7 +112,7 @@ function results = runConformalBacktest(params)
             net_LSTM = trainnet(Xtraining, Ttraining, layers_LSTM, "mse", options_LSTM);
             
             % Periodically recalibrate and calculate q_hat
-            pred_cal = minibatchpredict(net_LSTM, Xcal, InputDataFormats="CTB");
+            pred_cal = minibatchpredict(net_LSTM, Xcal, 'InputDataFormats', 'CTB');
             conformity_scores = abs(Tcal - pred_cal); % Score function can be defined
             q_hat = quantile(conformity_scores, 1 - alpha);
         end
@@ -117,17 +120,36 @@ function results = runConformalBacktest(params)
         % Generate a signal for the current day 
         % Use the latest trained model (net_LSTM) and the latest calculated quantile (q_hat)
         Xtest = network_features{t};
-        pred_test = predict(net_LSTM, Xtest);
+        Xtest_cell = {Xtest};
+        pred_test = minibatchpredict(net_LSTM, Xtest_cell, 'InputDataFormats', 'CTB');
 
         % Filter the signal using conformal prediction intervals
         interval_lower_bound = pred_test - q_hat;
         interval_upper_bound = pred_test + q_hat;
-        new_signal = pred_test;
 
-        % Filter out signals with insufficient confidence
-        uncertain_indices = (interval_lower_bound <= 0) & (interval_upper_bound >= 0); 
-        new_signal(uncertain_indices) = 0;
-        
+        switch signalLogic
+            case 0 % Binary Filtering
+                new_signal = pred_test;
+                uncertain_indices = (interval_lower_bound <= 0) & (interval_upper_bound >= 0);
+                new_signal(uncertain_indices) = 0;
+
+            case 1 % (Signal Scaling by Confidence
+                new_signal = pred_test;
+                confident_indices = (interval_lower_bound > 0) | (interval_upper_bound < 0);
+                new_signal(~confident_indices) = 0;
+                epsilon = 1e-8;
+                interval_width = 2 * q_hat + epsilon;
+                new_signal(confident_indices) = new_signal(confident_indices) ./ interval_width(confident_indices);
+                
+            case 2 % Direct Boundary Signaling
+                long_signal = max(0, interval_lower_bound);
+                short_signal = min(0, interval_upper_bound);
+                new_signal = long_signal + short_signal;
+                
+            otherwise
+                error('Invalid signalLogic parameter. Use 0, 1, or 2.');
+        end
+
         % Store signals
         final_signals(current_loop_idx, :) = new_signal;
     end
